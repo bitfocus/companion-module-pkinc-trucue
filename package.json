@@ -9,7 +9,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/pprokhor/companion-module-pkinc-trucue.git"
+		"url": "git+https://github.com/bitfocus/companion-module-pkinc-trucue.git"
 	},
 	"engines": {
 		"node": ">=22"
