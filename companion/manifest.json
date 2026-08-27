@@ -1,0 +1,26 @@
+{
+	"id": "pkinc-trucue",
+	"name": "pkinc-trucue",
+	"shortname": "trucue",
+	"description": "Control the TRUCUE video playout app for macOS over OSC",
+	"version": "0.0.0",
+	"license": "MIT",
+	"repository": "git+https://github.com/pprokhor/companion-module-pkinc-trucue.git",
+	"bugs": "https://github.com/pprokhor/companion-module-pkinc-trucue/issues",
+	"maintainers": [
+		{
+			"name": "PK",
+			"email": "pprokhor@gmail.com"
+		}
+	],
+	"legacyIds": [],
+	"runtime": {
+		"type": "node22",
+		"api": "nodejs-ipc",
+		"apiVersion": "0.0.0",
+		"entrypoint": "../src/main.js"
+	},
+	"manufacturer": "PK Inc",
+	"products": ["TRUCUE"],
+	"keywords": ["Video", "Playout", "Playback", "OSC"]
+}

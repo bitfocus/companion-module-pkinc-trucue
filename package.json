@@ -1,0 +1,24 @@
+{
+	"name": "pkinc-trucue",
+	"version": "1.0.0",
+	"main": "src/main.js",
+	"scripts": {
+		"test": "node test/smoke.js",
+		"package": "companion-module-build"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/pprokhor/companion-module-pkinc-trucue.git"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"packageManager": "yarn@4.17.0",
+	"dependencies": {
+		"@companion-module/base": "1.13.6"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^2.6.0"
+	}
+}
