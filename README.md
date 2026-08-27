@@ -15,7 +15,10 @@ Drives TRUCUE's OSC remote-control API over UDP.
 - **Trim** — Mark IN/OUT, Clear
 - **Modes & Audio** — Loop, Auto-Advance (Off / Auto-Next / Auto-First),
   Mute All
-- 46 ready-made button presets, plus a raw custom-OSC escape hatch
+- **Live feedback** — variables for clip name/index, countdown to OUT and
+  to the next bookmark, threshold feedbacks (button turns red/amber), and
+  a Load Clip dropdown fed by the playlist
+- ~50 ready-made button presets, plus a raw custom-OSC escape hatch
 
 See [companion/HELP.md](companion/HELP.md) for setup and usage.
 

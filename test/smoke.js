@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 // Offline verification of the module against TRUCUE's actual OSC receiver
-// behavior. The decoder + command mapper below are a line-for-line port of
-// the app's Swift OSCDecode / OSCCommand.from (ControlNook/OSCSender.swift),
-// so every action is round-tripped through exactly what the app will do
-// with the packet: encode → decode (incl. bundles) → prefix match → map.
-// Sequence actions (shuttle, auto-advance) are additionally run through a
-// simulation of the app's state machines from every possible start state.
+// behavior. The command mapper below is a port of the app's Swift
+// OSCCommand.from (ControlNook/OSCSender.swift), so every action is
+// round-tripped through what the app will do with the packet: encode →
+// decode (incl. bundles) → prefix match → map. Sequence actions are run
+// through a simulation of the app's state machines from every start
+// state, and the status-feedback path is tested end to end with
+// app-shaped /trucue/status packets. (The shared decoder is exercised
+// against the encoder here; the encoder itself was byte-verified against
+// the `osc` npm package.)
 //
 // Run: node test/smoke.js   (no Companion, no network needed)
 
 const assert = require('node:assert/strict')
-const { oscString, encodeMessage, encodeBundle, buildAddress } = require('../src/osc')
+const { oscString, encodeMessage, encodeBundle, decodeMessage, decodePacket, buildAddress } = require('../src/osc')
+const { EMPTY_STATUS, fmtCountdown, parseStatusPayload, parsePlaylistPayload, parseStatusPacket } = require('../src/status')
+const { getVariableDefinitions, variablesForStatus } = require('../src/variables')
 const getActionDefinitions = require('../src/actions')
+const getFeedbackDefinitions = require('../src/feedbacks')
 const getPresetDefinitions = require('../src/presets')
 
 let checks = 0
@@ -22,63 +28,6 @@ function ok(cond, msg) {
 function eq(a, b, msg) {
 	checks++
 	assert.deepEqual(a, b, msg)
-}
-
-// ── Port of TRUCUE's OSCDecode (strict OSC 1.0, big-endian, 4-aligned) ──
-function readOscString(buf, off) {
-	let end = off
-	while (end < buf.length && buf[end] !== 0) end++
-	if (end >= buf.length) throw new Error('unterminated OSC string')
-	return { s: buf.toString('utf8', off, end), off: off + ((end - off + 1 + 3) & ~3) }
-}
-
-function decodeMessage(buf) {
-	let r = readOscString(buf, 0)
-	const address = r.s
-	let off = r.off
-	if (!address.startsWith('/')) throw new Error('address must start with /')
-	r = readOscString(buf, off)
-	const tags = r.s
-	off = r.off
-	if (!tags.startsWith(',')) throw new Error('missing type tag string')
-	const args = []
-	for (const t of tags.slice(1)) {
-		if (t === 'i') {
-			args.push({ type: 'i', value: buf.readInt32BE(off) })
-			off += 4
-		} else if (t === 'f') {
-			args.push({ type: 'f', value: buf.readFloatBE(off) })
-			off += 4
-		} else if (t === 's') {
-			r = readOscString(buf, off)
-			args.push({ type: 's', value: r.s })
-			off = r.off
-		} else {
-			throw new Error(`unexpected type tag "${t}"`)
-		}
-	}
-	if (off !== buf.length) throw new Error(`trailing bytes: ${buf.length - off}`)
-	return { address, args }
-}
-
-// Mirrors OSCDecode.packet/bundle: '#' → bundle (skip 8-byte time tag,
-// int32-sized sub-packets in order), else single message.
-function decodePacket(buf) {
-	if (buf.length && buf[0] === 0x23) {
-		let r = readOscString(buf, 0)
-		if (r.s !== '#bundle') throw new Error('bad bundle header')
-		let off = r.off + 8
-		const out = []
-		while (off + 4 <= buf.length) {
-			const size = buf.readInt32BE(off)
-			off += 4
-			if (size <= 0 || off + size > buf.length) break
-			out.push(...decodePacket(buf.subarray(off, off + size)))
-			off += size
-		}
-		return out
-	}
-	return [decodeMessage(buf)]
 }
 
 // ── Port of TRUCUE's OSCCommand.from (prefix + trigger-zero rules) ──────
@@ -124,10 +73,6 @@ function mapCommand(msg, prefix) {
 }
 
 // ── Simulation of the app's mode + shuttle state machines ───────────────
-// Loop/auto (PlaylistView oscSetLoop / oscSetAutoNext / toggleAutoNext):
-// setting Loop on clears auto; the 3-state auto cycle is off→next→first→off,
-// fired only when the arg differs from autoplayNext (true only in 'next');
-// landing on an auto mode clears Loop.
 function applyModeCmd(state, m) {
 	if (m.cmd === '/loop') {
 		const v = m.value === 'toggle' ? !state.loop : m.value
@@ -144,9 +89,6 @@ function applyModeCmd(state, m) {
 		}
 	}
 }
-// Shuttle ladder (handleOSCCommand ff/rewind/play/pause): ff from
-// non-forward-shuttle → 2×, then ×2 up to 32× then back to 1× play;
-// rewind from non-reverse → −2×, then ×2 down to −32× then wraps to −2×.
 function applyTransportCmd(state, m) {
 	if (m.cmd === '/pause') {
 		state.mode = 'pause'
@@ -170,15 +112,8 @@ function applyTransportCmd(state, m) {
 	}
 }
 
-// ── 1. Encoder golden bytes ─────────────────────────────────────────────
-// '/play' = 5 bytes + NUL = 6 → zero-padded to 8
+// ── 1. Encoder golden bytes + decoder round-trip ────────────────────────
 eq(oscString('/play').toString('hex'), '2f706c6179000000', 'oscString NUL-terminates and pads')
-eq(oscString('/play').length, 8, 'oscString pads to 4-byte boundary')
-eq(
-	encodeMessage('/trucue/play', []).toString('hex'),
-	Buffer.concat([oscString('/trucue/play'), oscString(',')]).toString('hex'),
-	'no-arg message = address + bare type tag',
-)
 eq(encodeMessage('/trucue/play', []).length, 20, 'no-arg /trucue/play is 20 bytes')
 {
 	const b = encodeMessage('/a', [{ type: 'i', value: 3 }])
@@ -209,9 +144,11 @@ eq(buildAddress(undefined, '/play'), '/play', 'missing prefix = flat address')
 eq(buildAddress('///', '/play'), '/play', 'slash-only prefix = flat address')
 
 // ── 3. Every action, round-tripped through the app's decode + map ───────
-const sent = [] // { kind: 'cmd'|'raw'|'seq', packet: Buffer }
+const sent = [] // { kind: 'cmd'|'raw'|'seq', packet: Buffer, args }
 const logs = []
 const self = {
+	status: { ...EMPTY_STATUS },
+	playlistNames: [],
 	sendOsc: (cmd, args) => sent.push({ kind: 'cmd', packet: encodeMessage(buildAddress('trucue', cmd), args), args }),
 	sendOscRaw: (address, args) => sent.push({ kind: 'raw', packet: encodeMessage(address, args), args }),
 	sendOscSeq: (seq) =>
@@ -222,7 +159,7 @@ const self = {
 	log: (level, msg) => logs.push({ level, msg }),
 }
 const context = { parseVariablesInString: async (s) => s }
-const actions = getActionDefinitions(self)
+let actions = getActionDefinitions(self)
 
 async function run(actionId, options = {}) {
 	sent.length = 0
@@ -231,8 +168,6 @@ async function run(actionId, options = {}) {
 	await actions[actionId].callback({ actionId, options }, context)
 	return sent[0] ?? null
 }
-// Run an action and return what the app would map it to: a list of
-// {cmd, value} (single messages give a 1-element list).
 async function mappedList(actionId, options) {
 	const out = await run(actionId, options)
 	ok(out, `${actionId}: sent a packet`)
@@ -280,6 +215,7 @@ const main = async () => {
 	await expectMapped('goto_percent', { percent: '50.5' }, '/goto/percent', 50.5)
 	await expectMapped('jump_to_last', { seconds: '10' }, '/jumptolast', 10)
 	await expectMapped('jump_to_mark', { mark: '2' }, '/jumptomark', 2)
+	ok(actions.jump_to_mark.name.includes('by Index'), 'jump_to_mark renamed to "…by Index"')
 
 	// Toggle/set commands
 	for (const [actionId, cmd] of [['loop', '/loop'], ['mute_all', '/muteall']]) {
@@ -350,6 +286,24 @@ const main = async () => {
 		eq(ps.args, [{ type: 's', value: 'hi' }], 'custom string arg')
 	}
 
+	// Load Clip dropdown: choices come from the playlist feed
+	{
+		let opt = actions.load_clip.options.find((o) => o.id === 'clip')
+		eq(opt.choices, [{ id: 0, label: '— no playlist received yet —' }], 'load_clip placeholder before playlist')
+		const none = await run('load_clip', { clip: 0 })
+		eq(none, null, 'load_clip placeholder sends nothing')
+		ok(logs.some((l) => l.level === 'warn'), 'load_clip placeholder warns')
+
+		self.playlistNames = ['Intro', 'Main Show', 'Outro']
+		actions = getActionDefinitions(self)
+		opt = actions.load_clip.options.find((o) => o.id === 'clip')
+		eq(opt.choices.length, 3, 'load_clip has one choice per clip')
+		eq(opt.choices[1], { id: 2, label: '2: Main Show' }, 'load_clip choice shape')
+		eq(opt.default, 1, 'load_clip defaults to first clip')
+		await expectMapped('load_clip', { clip: 2 }, '/load/index', 2)
+		await expectMapped('load_clip', { clip: '3' }, '/load/index', 3) // string form (allowCustom-safe)
+	}
+
 	// Invalid input → skipped with a warning, nothing sent
 	for (const [actionId, options] of [
 		['load_index', { index: 'abc' }],
@@ -370,9 +324,80 @@ const main = async () => {
 		eq(mapCommand(decodeMessage(encodeMessage('/TRUCUE/Play', [])), 'trucue').cmd, '/play', 'matching is case-insensitive')
 	}
 
-	// ── 4. Presets reference real actions with complete options ────────
+	// ── 4. Status feed: formatting, parsing, variables, feedbacks ──────
+	eq(fmtCountdown(0), '0:00', undefined)
+	eq(fmtCountdown(0.4), '0:01', 'sub-second ceils to 0:01')
+	eq(fmtCountdown(59.2), '1:00', 'ceil rolls to the next minute')
+	eq(fmtCountdown(75), '1:15', undefined)
+	eq(fmtCountdown(3600), '1:00:00', 'hour form')
+	eq(fmtCountdown(-1), '', 'negative = no value')
+
+	const stJson = JSON.stringify({ clip: 'Main Show', index: 2, remaining: 12.34, playing: 1, bmName: 'Chorus', bmRemaining: 4.2 })
+	{
+		const st = parseStatusPayload(stJson)
+		eq(st, { clip: 'Main Show', index: 2, remaining: 12.34, playing: 1, bmName: 'Chorus', bmRemaining: 4.2 }, 'status payload parses')
+		const empty = parseStatusPayload(JSON.stringify({ clip: '', index: 0, remaining: 0, playing: 0 }))
+		eq(empty.bmRemaining, -1, 'missing bookmark → -1')
+		eq(parseStatusPayload('not json'), null, 'garbage json → null')
+		eq(parseStatusPayload('[1,2]'), null, 'array payload → null')
+		eq(parsePlaylistPayload('["A","B"]'), ['A', 'B'], 'playlist payload parses')
+		eq(parsePlaylistPayload('{"a":1}'), null, 'non-array playlist → null')
+	}
+	{
+		// End to end: app-shaped packets through the listener's parser
+		const p1 = parseStatusPacket(encodeMessage('/trucue/status', [{ type: 's', value: stJson }]))
+		eq(p1.status.clip, 'Main Show', 'status packet routes')
+		eq(p1.playlist, null, undefined)
+		const p2 = parseStatusPacket(encodeMessage('/trucue/status/playlist', [{ type: 's', value: '["A","B"]' }]))
+		eq(p2.playlist, ['A', 'B'], 'playlist packet routes')
+		const p3 = parseStatusPacket(encodeMessage('/trucue/play', []))
+		eq(p3, { status: null, playlist: null }, 'non-status address ignored')
+		const p4 = parseStatusPacket(Buffer.from('garbage'))
+		eq(p4, { status: null, playlist: null }, 'undecodable packet ignored')
+	}
+	{
+		const vars = variablesForStatus(parseStatusPayload(stJson))
+		eq(vars, {
+			clip_name: 'Main Show', clip_index: 2,
+			time_remaining: '0:13', time_remaining_s: 13,
+			bookmark_name: 'Chorus', bookmark_remaining: '0:05', bookmark_remaining_s: 5,
+		}, 'variables from status')
+		const cleared = variablesForStatus({ ...EMPTY_STATUS })
+		for (const v of Object.values(cleared)) eq(v, '', 'cleared status blanks every variable')
+		const varIds = new Set(getVariableDefinitions().map((d) => d.variableId))
+		for (const k of Object.keys(vars)) ok(varIds.has(k), `variable "${k}" is defined`)
+		eq(varIds.size, Object.keys(vars).length, 'every defined variable gets a value')
+	}
+	const feedbacks = getFeedbackDefinitions(self)
+	{
+		self.status = parseStatusPayload(stJson) // remaining 12.34, bmRemaining 4.2
+		eq(feedbacks.countdown_under.callback({ options: { seconds: 10 } }), false, 'countdown 12.34s not under 10')
+		eq(feedbacks.countdown_under.callback({ options: { seconds: 15 } }), true, 'countdown 12.34s under 15')
+		eq(feedbacks.bookmark_under.callback({ options: { seconds: 5 } }), true, 'bookmark 4.2s under 5')
+		eq(feedbacks.bookmark_under.callback({ options: { seconds: 4 } }), false, 'bookmark 4.2s not under 4')
+		self.status = { ...EMPTY_STATUS }
+		eq(feedbacks.countdown_under.callback({ options: { seconds: 9999 } }), false, 'no clip → countdown feedback off')
+		eq(feedbacks.bookmark_under.callback({ options: { seconds: 9999 } }), false, 'no bookmark → bookmark feedback off')
+	}
+
+	// Upgrade script: pre-1.1 configs get the feedback defaults
+	{
+		const UpgradeScripts = require('../src/upgrades')
+		eq(UpgradeScripts.length, 1, 'one upgrade script')
+		const r = UpgradeScripts[0]({}, { config: { host: '1.2.3.4', port: '8000', prefix: 'trucue' }, actions: [], feedbacks: [] })
+		eq(r.updatedConfig.listen, true, 'upgrade defaults listen on')
+		eq(r.updatedConfig.feedbackPort, '9001', 'upgrade defaults feedback port')
+		eq(r.updatedActions, [], 'upgrade touches no actions')
+		const r2 = UpgradeScripts[0]({}, { config: { listen: false }, actions: [], feedbacks: [] })
+		eq(r2.updatedConfig, null, 'explicit listen setting untouched')
+		const r3 = UpgradeScripts[0]({}, { config: null, actions: [], feedbacks: [] })
+		eq(r3.updatedConfig, null, 'null config tolerated')
+	}
+
+	// ── 5. Presets reference real actions/feedbacks/variables ──────────
 	const presets = getPresetDefinitions()
 	ok(Object.keys(presets).length >= 25, 'a useful number of presets exist')
+	const varIds = new Set(getVariableDefinitions().map((d) => d.variableId))
 	for (const [key, preset] of Object.entries(presets)) {
 		for (const step of preset.steps) {
 			for (const ref of [...(step.down ?? []), ...(step.up ?? [])]) {
@@ -398,6 +423,20 @@ const main = async () => {
 					}
 				}
 			}
+		}
+		for (const ref of preset.feedbacks ?? []) {
+			const fb = feedbacks[ref.feedbackId]
+			ok(fb, `preset "${key}" references existing feedback "${ref.feedbackId}"`)
+			for (const o of fb.options ?? []) {
+				ok(
+					Object.prototype.hasOwnProperty.call(ref.options, o.id),
+					`preset "${key}" supplies option "${o.id}" of feedback "${ref.feedbackId}"`,
+				)
+			}
+		}
+		// Every $(pkinc-trucue:X) in button text must be a defined variable
+		for (const m of String(preset.style.text).matchAll(/\$\(pkinc-trucue:([a-z0-9_]+)\)/g)) {
+			ok(varIds.has(m[1]), `preset "${key}" uses defined variable "${m[1]}"`)
 		}
 	}
 

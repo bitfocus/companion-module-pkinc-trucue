@@ -133,6 +133,72 @@ class OscUdpClient {
 	}
 }
 
+function readOscString(buf, off) {
+	let end = off
+	while (end < buf.length && buf[end] !== 0) end++
+	if (end >= buf.length) throw new Error('unterminated OSC string')
+	return { s: buf.toString('utf8', off, end), off: off + ((end - off + 1 + 3) & ~3) }
+}
+
+/**
+ * Decode one OSC 1.0 message (strict, mirroring TRUCUE's own decoder:
+ * big-endian, 4-byte aligned, NUL-terminated padded strings).
+ * @param {Buffer} buf
+ * @returns {{address: string, args: Array<{type:'i'|'f'|'s', value:any}>}}
+ */
+function decodeMessage(buf) {
+	let r = readOscString(buf, 0)
+	const address = r.s
+	let off = r.off
+	if (!address.startsWith('/')) throw new Error('address must start with /')
+	r = readOscString(buf, off)
+	const tags = r.s
+	off = r.off
+	if (!tags.startsWith(',')) throw new Error('missing type tag string')
+	const args = []
+	for (const t of tags.slice(1)) {
+		if (t === 'i') {
+			args.push({ type: 'i', value: buf.readInt32BE(off) })
+			off += 4
+		} else if (t === 'f') {
+			args.push({ type: 'f', value: buf.readFloatBE(off) })
+			off += 4
+		} else if (t === 's') {
+			r = readOscString(buf, off)
+			args.push({ type: 's', value: r.s })
+			off = r.off
+		} else {
+			throw new Error(`unexpected type tag "${t}"`)
+		}
+	}
+	if (off !== buf.length) throw new Error(`trailing bytes: ${buf.length - off}`)
+	return { address, args }
+}
+
+/**
+ * Decode a packet: '#bundle' (recursively, in order, time tag ignored)
+ * or a single message.
+ * @param {Buffer} buf
+ * @returns {Array<{address: string, args: Array}>}
+ */
+function decodePacket(buf) {
+	if (buf.length && buf[0] === 0x23) {
+		const r = readOscString(buf, 0)
+		if (r.s !== '#bundle') throw new Error('bad bundle header')
+		let off = r.off + 8
+		const out = []
+		while (off + 4 <= buf.length) {
+			const size = buf.readInt32BE(off)
+			off += 4
+			if (size <= 0 || off + size > buf.length) break
+			out.push(...decodePacket(buf.subarray(off, off + size)))
+			off += size
+		}
+		return out
+	}
+	return [decodeMessage(buf)]
+}
+
 /**
  * Encode an OSC 1.0 bundle with an "immediate" time tag. TRUCUE unpacks
  * bundles recursively, ignores the time tag, and executes the contained
@@ -165,4 +231,4 @@ function buildAddress(prefix, cmd) {
 	return p === '' ? cmd : `/${p}${cmd}`
 }
 
-module.exports = { oscString, encodeMessage, encodeBundle, buildAddress, OscUdpClient }
+module.exports = { oscString, encodeMessage, encodeBundle, decodeMessage, decodePacket, buildAddress, OscUdpClient }

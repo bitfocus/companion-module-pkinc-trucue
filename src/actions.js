@@ -155,6 +155,30 @@ module.exports = function getActionDefinitions(self) {
 			options: [],
 			callback: trigger('/clip/prev'),
 		},
+		load_clip: {
+			name: 'Playlist: Load Clip',
+			description: 'Pick from the playlist; stores the position, like Load by Index (needs feedback enabled).',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'clip',
+					label: 'Clip',
+					choices: self.playlistNames && self.playlistNames.length
+						? self.playlistNames.map((n, i) => ({ id: i + 1, label: `${i + 1}: ${n}` }))
+						: [{ id: 0, label: '— no playlist received yet —' }],
+					default: self.playlistNames && self.playlistNames.length ? 1 : 0,
+					minChoicesForSearch: 5,
+				},
+			],
+			callback: async (event) => {
+				const n = Math.round(Number(event.options.clip))
+				if (!(n >= 1)) {
+					self.log('warn', 'Load Clip: no clip selected — command not sent')
+					return
+				}
+				self.sendOsc('/load/index', [{ type: 'i', value: n }])
+			},
+		},
 		load_index: {
 			name: 'Playlist: Load Clip by Index',
 			description: '1-based, counts clips only.',
@@ -239,7 +263,7 @@ module.exports = function getActionDefinitions(self) {
 			},
 		},
 		jump_to_mark: {
-			name: 'Seek: Go to Bookmark',
+			name: 'Seek: Go to Bookmark by Index',
 			description: '1-based, in time order.',
 			options: [numField('mark', 'Bookmark', '1')],
 			callback: async (event, context) => {

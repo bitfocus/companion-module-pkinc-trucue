@@ -27,6 +27,20 @@ module.exports = function getPresetDefinitions() {
 		}
 	}
 
+	// Display-only button: no action, driven by variables + feedbacks.
+	// The $(pkinc-trucue:...) prefix is rewritten by Companion to the
+	// actual connection label when the preset is applied.
+	const display = (key, category, name, text, bgcolor, feedbacks = []) => {
+		presets[key] = {
+			type: 'button',
+			category,
+			name,
+			style: { text, size: '14', color: WHITE, bgcolor },
+			steps: [{ down: [], up: [] }],
+			feedbacks,
+		}
+	}
+
 	// ── Transport ────────────────────────────────────────────────────
 	button('play', 'Transport', 'PLAY', GREEN, 'play', {}, '18')
 	button('pause', 'Transport', 'PAUSE', AMBER, 'pause', {}, '18')
@@ -75,6 +89,18 @@ module.exports = function getPresetDefinitions() {
 	button('auto_next', 'Modes & Audio', 'AUTO\nNEXT', GRAY, 'autonext', { mode: 'next' })
 	button('auto_first', 'Modes & Audio', 'AUTO\nFIRST', GRAY, 'autonext', { mode: 'first' })
 	button('mute_all', 'Modes & Audio', 'MUTE\nALL', RED, 'mute_all', { mode: 'toggle' })
+
+	// ── Status & Countdown (needs feedback enabled in TRUCUE) ────────
+	display('status_countdown', 'Status & Countdown', 'Countdown to OUT',
+		'OUT\n$(pkinc-trucue:time_remaining)', BLACK,
+		[{ feedbackId: 'countdown_under', options: { seconds: 10 },
+			style: { bgcolor: combineRgb(200, 0, 0), color: WHITE } }])
+	display('status_bookmark', 'Status & Countdown', 'Countdown to next bookmark',
+		'$(pkinc-trucue:bookmark_name)\n$(pkinc-trucue:bookmark_remaining)', BLACK,
+		[{ feedbackId: 'bookmark_under', options: { seconds: 5 },
+			style: { bgcolor: combineRgb(170, 110, 0), color: WHITE } }])
+	display('status_now_playing', 'Status & Countdown', 'Current clip',
+		'$(pkinc-trucue:clip_index): $(pkinc-trucue:clip_name)', combineRgb(20, 20, 60))
 
 	return presets
 }
