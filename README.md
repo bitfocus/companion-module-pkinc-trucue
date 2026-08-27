@@ -1,8 +1,8 @@
 # companion-module-pkinc-trucue
 
 [Bitfocus Companion](https://bitfocus.io/companion) module for
-**[TRUCUE](https://trucue.io)** — a video playout app for macOS with
-professional SDI output. Drives TRUCUE's OSC remote-control API over UDP.
+**[TRUCUE](https://trucue.io)** — a video playout app for macOS. 
+Drives TRUCUE's OSC remote-control API over UDP.
 
 ## Features
 
