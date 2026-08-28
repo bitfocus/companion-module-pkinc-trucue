@@ -337,14 +337,14 @@ const main = async () => {
 	eq(fmtCountdown(-1), '', 'negative = no value')
 
 	const stJson = JSON.stringify({
-		clip: 'Main Show ↻■', index: 2, remaining: 12.34, playing: 1,
-		next: 'Outro →', prev: 'Intro ■', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
+		clip: 'Main Show ↻B', index: 2, remaining: 12.34, playing: 1,
+		next: 'Outro →', prev: 'Intro B', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
 	})
 	{
 		const st = parseStatusPayload(stJson)
 		eq(st, {
-			clip: 'Main Show ↻■', index: 2, remaining: 12.34, playing: 1,
-			next: 'Outro →', prev: 'Intro ■', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
+			clip: 'Main Show ↻B', index: 2, remaining: 12.34, playing: 1,
+			next: 'Outro →', prev: 'Intro B', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
 		}, 'status payload parses (markers pass through verbatim)')
 		const empty = parseStatusPayload(JSON.stringify({ clip: '', index: 0, remaining: 0, playing: 0 }))
 		eq(empty.bmRemaining, -1, 'missing bookmark → -1')
@@ -358,7 +358,7 @@ const main = async () => {
 	{
 		// End to end: app-shaped packets through the listener's parser
 		const p1 = parseStatusPacket(encodeMessage('/trucue/status', [{ type: 's', value: stJson }]))
-		eq(p1.status.clip, 'Main Show ↻■', 'status packet routes')
+		eq(p1.status.clip, 'Main Show ↻B', 'status packet routes')
 		eq(p1.playlist, null, undefined)
 		const p2 = parseStatusPacket(encodeMessage('/trucue/status/playlist', [{ type: 's', value: '["A","B"]' }]))
 		eq(p2.playlist, ['A', 'B'], 'playlist packet routes')
@@ -373,8 +373,8 @@ const main = async () => {
 	{
 		const vars = variablesForStatus(parseStatusPayload(stJson))
 		eq(vars, {
-			clip_name: 'Main Show ↻■', clip_index: 2,
-			next_clip_name: 'Outro →', prev_clip_name: 'Intro ■', clip_volume: '-3.5 dB',
+			clip_name: 'Main Show ↻B', clip_index: 2,
+			next_clip_name: 'Outro →', prev_clip_name: 'Intro B', clip_volume: '-3.5 dB',
 			time_remaining: '0:13', time_remaining_s: 13,
 			bookmark_name: 'Chorus', bookmark_remaining: '0:05', bookmark_remaining_s: 5,
 		}, 'variables from status')

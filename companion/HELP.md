@@ -55,7 +55,8 @@ for a volume knob — the *Volume knob* preset is pre-wired).
 
 Use them in button text, e.g. `$(trucue:time_remaining)` (the prefix is
 your connection label). Clip-name variables carry the clip's mode symbols:
-`↻` loop, `→` auto-next, `↺` auto-first, `■` cue in black.
+`↻` loop, `→` auto-next, `↺` auto-first, `B` cue in black
+(the same marks the app itself uses).
 
 ## Feedbacks
 
