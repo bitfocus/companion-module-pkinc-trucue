@@ -89,7 +89,7 @@ class TrucueInstance extends InstanceBase {
 		// be overwritten by a late async callback from a partial setup.
 		const host = String(config.host ?? '').trim()
 		const port = Number(config.port)
-		const fp = Number(config.feedbackPort ?? 9001)
+		const fp = Number(config.feedbackPort ?? 9017)
 		if (host === '' || !Number.isInteger(port) || port < 1 || port > 65535) {
 			this.badConfig = 'Host and port are required'
 		} else if (this.listenEnabled && (!Number.isInteger(fp) || fp < 1 || fp > 65535)) {
@@ -172,7 +172,7 @@ class TrucueInstance extends InstanceBase {
 				label: 'UDP Port',
 				width: 4,
 				regex: Regex.PORT,
-				default: '8000',
+				default: '8017',
 				required: true,
 			},
 			{
@@ -198,7 +198,7 @@ class TrucueInstance extends InstanceBase {
 				tooltip: "Must match TRUCUE's Companion feedback port.",
 				width: 4,
 				regex: Regex.PORT,
-				default: '9001',
+				default: '9017',
 				isVisible: (options) => options.listen !== false,
 				isVisibleExpression: '$(options:listen) !== false',
 			},

@@ -319,6 +319,16 @@ module.exports = function getActionDefinitions(self) {
 				self.sendOscSeq(seq)
 			},
 		},
+		volume_adjust: {
+			name: 'Audio: Clip Volume ± dB',
+			description: 'Nudges the loaded clip’s volume; fractions OK (−60…+20 dB). Rotary-friendly.',
+			options: [numField('db', 'dB (±)', '1')],
+			callback: async (event, context) => {
+				const n = await parseNum(context, event.options.db, 'Clip volume')
+				if (n === null) return
+				self.sendOsc('/volume/adjust', [{ type: 'f', value: n }])
+			},
+		},
 		mute_all: {
 			name: 'Audio: Mute All',
 			description: 'Spares channels carrying LTC.',

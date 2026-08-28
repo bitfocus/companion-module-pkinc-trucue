@@ -14,6 +14,9 @@ const EMPTY_STATUS = Object.freeze({
 	index: 0,
 	remaining: 0,
 	playing: 0,
+	next: '',
+	prev: '',
+	vol: null, // dB of the loaded clip; null = unknown/none
 	bmName: '',
 	bmRemaining: -1, // -1 = no bookmark ahead
 })
@@ -44,6 +47,9 @@ function parseStatusPayload(json) {
 		index: Math.max(0, Math.round(num(o.index, 0))),
 		remaining: Math.max(0, num(o.remaining, 0)),
 		playing: num(o.playing, 0) ? 1 : 0,
+		next: typeof o.next === 'string' ? o.next : '',
+		prev: typeof o.prev === 'string' ? o.prev : '',
+		vol: o.vol === undefined ? null : num(o.vol, 0),
 		bmName: typeof o.bmName === 'string' ? o.bmName : '',
 		bmRemaining: o.bmRemaining === undefined ? -1 : Math.max(0, num(o.bmRemaining, 0)),
 	}

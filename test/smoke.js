@@ -15,7 +15,7 @@
 const assert = require('node:assert/strict')
 const { oscString, encodeMessage, encodeBundle, decodeMessage, decodePacket, buildAddress } = require('../src/osc')
 const { EMPTY_STATUS, fmtCountdown, parseStatusPayload, parsePlaylistPayload, parseStatusPacket } = require('../src/status')
-const { getVariableDefinitions, variablesForStatus } = require('../src/variables')
+const { getVariableDefinitions, variablesForStatus, fmtDb } = require('../src/variables')
 const getActionDefinitions = require('../src/actions')
 const getFeedbackDefinitions = require('../src/feedbacks')
 const getPresetDefinitions = require('../src/presets')
@@ -66,6 +66,7 @@ function mapCommand(msg, prefix) {
 		case '/jump':
 		case '/goto/seconds':
 		case '/goto/percent':
+		case '/volume/adjust':
 			return num === undefined ? null : { cmd: addr, value: num }
 		default:
 			return null
@@ -215,6 +216,8 @@ const main = async () => {
 	await expectMapped('goto_percent', { percent: '50.5' }, '/goto/percent', 50.5)
 	await expectMapped('jump_to_last', { seconds: '10' }, '/jumptolast', 10)
 	await expectMapped('jump_to_mark', { mark: '2' }, '/jumptomark', 2)
+	await expectMapped('volume_adjust', { db: '1' }, '/volume/adjust', 1)
+	await expectMapped('volume_adjust', { db: '-0.5' }, '/volume/adjust', -0.5)
 	ok(actions.jump_to_mark.name.includes('by Index'), 'jump_to_mark renamed to "…by Index"')
 
 	// Toggle/set commands
@@ -307,6 +310,7 @@ const main = async () => {
 	// Invalid input → skipped with a warning, nothing sent
 	for (const [actionId, options] of [
 		['load_index', { index: 'abc' }],
+		['volume_adjust', { db: 'loud' }],
 		['jump', { seconds: '' }],
 		['load_name', { name: '   ' }],
 		['custom', { address: 'no-slash', argtype: 'none', value: '' }],
@@ -332,12 +336,20 @@ const main = async () => {
 	eq(fmtCountdown(3600), '1:00:00', 'hour form')
 	eq(fmtCountdown(-1), '', 'negative = no value')
 
-	const stJson = JSON.stringify({ clip: 'Main Show', index: 2, remaining: 12.34, playing: 1, bmName: 'Chorus', bmRemaining: 4.2 })
+	const stJson = JSON.stringify({
+		clip: 'Main Show ↻■', index: 2, remaining: 12.34, playing: 1,
+		next: 'Outro →', prev: 'Intro ■', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
+	})
 	{
 		const st = parseStatusPayload(stJson)
-		eq(st, { clip: 'Main Show', index: 2, remaining: 12.34, playing: 1, bmName: 'Chorus', bmRemaining: 4.2 }, 'status payload parses')
+		eq(st, {
+			clip: 'Main Show ↻■', index: 2, remaining: 12.34, playing: 1,
+			next: 'Outro →', prev: 'Intro ■', vol: -3.5, bmName: 'Chorus', bmRemaining: 4.2,
+		}, 'status payload parses (markers pass through verbatim)')
 		const empty = parseStatusPayload(JSON.stringify({ clip: '', index: 0, remaining: 0, playing: 0 }))
 		eq(empty.bmRemaining, -1, 'missing bookmark → -1')
+		eq(empty.vol, null, 'missing vol → null')
+		eq(empty.next, '', 'missing next → empty')
 		eq(parseStatusPayload('not json'), null, 'garbage json → null')
 		eq(parseStatusPayload('[1,2]'), null, 'array payload → null')
 		eq(parsePlaylistPayload('["A","B"]'), ['A', 'B'], 'playlist payload parses')
@@ -346,7 +358,7 @@ const main = async () => {
 	{
 		// End to end: app-shaped packets through the listener's parser
 		const p1 = parseStatusPacket(encodeMessage('/trucue/status', [{ type: 's', value: stJson }]))
-		eq(p1.status.clip, 'Main Show', 'status packet routes')
+		eq(p1.status.clip, 'Main Show ↻■', 'status packet routes')
 		eq(p1.playlist, null, undefined)
 		const p2 = parseStatusPacket(encodeMessage('/trucue/status/playlist', [{ type: 's', value: '["A","B"]' }]))
 		eq(p2.playlist, ['A', 'B'], 'playlist packet routes')
@@ -355,10 +367,14 @@ const main = async () => {
 		const p4 = parseStatusPacket(Buffer.from('garbage'))
 		eq(p4, { status: null, playlist: null }, 'undecodable packet ignored')
 	}
+	eq(fmtDb(-3.5), '-3.5 dB', undefined)
+	eq(fmtDb(0), '0 dB', undefined)
+	eq(fmtDb(2), '+2 dB', 'positive gains get a +')
 	{
 		const vars = variablesForStatus(parseStatusPayload(stJson))
 		eq(vars, {
-			clip_name: 'Main Show', clip_index: 2,
+			clip_name: 'Main Show ↻■', clip_index: 2,
+			next_clip_name: 'Outro →', prev_clip_name: 'Intro ■', clip_volume: '-3.5 dB',
 			time_remaining: '0:13', time_remaining_s: 13,
 			bookmark_name: 'Chorus', bookmark_remaining: '0:05', bookmark_remaining_s: 5,
 		}, 'variables from status')
@@ -380,18 +396,26 @@ const main = async () => {
 		eq(feedbacks.bookmark_under.callback({ options: { seconds: 9999 } }), false, 'no bookmark → bookmark feedback off')
 	}
 
-	// Upgrade script: pre-1.1 configs get the feedback defaults
+	// Upgrade scripts: pre-1.1 configs get the feedback defaults, and the
+	// old default ports migrate to the new ones.
 	{
 		const UpgradeScripts = require('../src/upgrades')
-		eq(UpgradeScripts.length, 1, 'one upgrade script')
+		eq(UpgradeScripts.length, 2, 'two upgrade scripts')
 		const r = UpgradeScripts[0]({}, { config: { host: '1.2.3.4', port: '8000', prefix: 'trucue' }, actions: [], feedbacks: [] })
 		eq(r.updatedConfig.listen, true, 'upgrade defaults listen on')
-		eq(r.updatedConfig.feedbackPort, '9001', 'upgrade defaults feedback port')
+		eq(r.updatedConfig.feedbackPort, '9001', 'upgrade defaults feedback port (as shipped in 1.1.0)')
 		eq(r.updatedActions, [], 'upgrade touches no actions')
 		const r2 = UpgradeScripts[0]({}, { config: { listen: false }, actions: [], feedbacks: [] })
 		eq(r2.updatedConfig, null, 'explicit listen setting untouched')
 		const r3 = UpgradeScripts[0]({}, { config: null, actions: [], feedbacks: [] })
 		eq(r3.updatedConfig, null, 'null config tolerated')
+
+		const p1 = UpgradeScripts[1]({}, { config: { port: '8000', feedbackPort: '9001' }, actions: [], feedbacks: [] })
+		eq(p1.updatedConfig, { port: '8017', feedbackPort: '9017' }, 'old default ports migrate')
+		const p2 = UpgradeScripts[1]({}, { config: { port: 8000, feedbackPort: '5555' }, actions: [], feedbacks: [] })
+		eq(p2.updatedConfig, { port: '8017', feedbackPort: '5555' }, 'numeric 8000 migrates, custom feedback port kept')
+		const p3 = UpgradeScripts[1]({}, { config: { port: '8001', feedbackPort: '9002' }, actions: [], feedbacks: [] })
+		eq(p3.updatedConfig, null, 'deliberate non-default ports untouched')
 	}
 
 	// ── 5. Presets reference real actions/feedbacks/variables ──────────
@@ -400,7 +424,10 @@ const main = async () => {
 	const varIds = new Set(getVariableDefinitions().map((d) => d.variableId))
 	for (const [key, preset] of Object.entries(presets)) {
 		for (const step of preset.steps) {
-			for (const ref of [...(step.down ?? []), ...(step.up ?? [])]) {
+			for (const ref of [
+				...(step.down ?? []), ...(step.up ?? []),
+				...(step.rotate_left ?? []), ...(step.rotate_right ?? []),
+			]) {
 				const action = actions[ref.actionId]
 				ok(action, `preset "${key}" references existing action "${ref.actionId}"`)
 				const optionDefs = action.options ?? []

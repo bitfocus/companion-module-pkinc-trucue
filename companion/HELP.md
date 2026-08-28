@@ -5,11 +5,11 @@ Controls the **TRUCUE** video playout app for macOS over OSC (UDP).
 ## TRUCUE setup
 
 1. In TRUCUE open **Settings → OSC** and enable **OSC remote control**.
-2. Match the **Port** (default `8000`) and **Address prefix** (default
+2. Match the **Port** (default `8017`) and **Address prefix** (default
    `trucue`) in this connection's settings.
 3. For variables, countdowns and the Load Clip list, also enable
    **Companion feedback** in the same panel (host = the machine running
-   Companion, port default `9001`) and keep **Enable feedback** on in
+   Companion, port default `9017`) and keep **Enable feedback** on in
    this connection.
 4. While testing commands, **Show Logs** displays every incoming packet.
 
@@ -35,7 +35,9 @@ the current play/pause state.
 **Trim** — Set Mark IN / OUT at playhead, Clear IN/OUT.
 
 **Modes & Audio** — Loop (toggle/on/off), Auto-Advance (Off / Auto-Next /
-Auto-First; setting a mode also clears Loop), Mute All (spares LTC channels).
+Auto-First; setting a mode also clears Loop), Mute All (spares LTC channels),
+Clip Volume ± dB (fractions OK; assign to a rotary dial's rotate left/right
+for a volume knob — the *Volume knob* preset is pre-wired).
 
 **Send Custom OSC Command** — raw address + optional argument, sent as typed
 (prefix not applied).
@@ -43,13 +45,17 @@ Auto-First; setting a mode also clears Loop), Mute All (spares LTC channels).
 ## Variables
 
 - `clip_name`, `clip_index` — currently loaded clip (1-based, clips only)
+- `next_clip_name`, `prev_clip_name` — playlist neighbors (next follows the
+  armed auto mode)
+- `clip_volume` — loaded clip's gain, e.g. `-3.5 dB`
 - `time_remaining`, `time_remaining_s` — countdown to the trim-aware OUT
   (`m:ss` / whole seconds)
 - `bookmark_name`, `bookmark_remaining`, `bookmark_remaining_s` — next
   bookmark ahead of the playhead (empty when none)
 
 Use them in button text, e.g. `$(trucue:time_remaining)` (the prefix is
-your connection label).
+your connection label). Clip-name variables carry the clip's mode symbols:
+`↻` loop, `→` auto-next, `↺` auto-first, `■` cue in black.
 
 ## Feedbacks
 

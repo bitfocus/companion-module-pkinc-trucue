@@ -12,4 +12,24 @@ module.exports = [
 		}
 		return result
 	},
+	// v1.2.0: default ports moved 8000→8017 and 9001→9017 (TRUCUE b244
+	// moved in lockstep). Only the exact old defaults are migrated —
+	// deliberately chosen ports are left alone.
+	function migrateDefaultPorts(_context, props) {
+		const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+		if (props.config) {
+			const c = { ...props.config }
+			let changed = false
+			if (String(c.port) === '8000') {
+				c.port = '8017'
+				changed = true
+			}
+			if (String(c.feedbackPort) === '9001') {
+				c.feedbackPort = '9017'
+				changed = true
+			}
+			if (changed) result.updatedConfig = c
+		}
+		return result
+	},
 ]

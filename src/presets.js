@@ -89,6 +89,25 @@ module.exports = function getPresetDefinitions() {
 	button('auto_next', 'Modes & Audio', 'AUTO\nNEXT', GRAY, 'autonext', { mode: 'next' })
 	button('auto_first', 'Modes & Audio', 'AUTO\nFIRST', GRAY, 'autonext', { mode: 'first' })
 	button('mute_all', 'Modes & Audio', 'MUTE\nALL', RED, 'mute_all', { mode: 'toggle' })
+	button('vol_down', 'Modes & Audio', 'VOL\n−1 dB', GRAY, 'volume_adjust', { db: '-1' })
+	button('vol_up', 'Modes & Audio', 'VOL\n+1 dB', GRAY, 'volume_adjust', { db: '1' })
+	// Rotary (Stream Deck + dial): turn = ±1 dB, display shows live level.
+	presets['volume_knob'] = {
+		type: 'button',
+		category: 'Modes & Audio',
+		name: 'Volume knob (rotary ±1 dB)',
+		style: { text: 'VOL\n$(pkinc-trucue:clip_volume)', size: '14', color: WHITE, bgcolor: GRAY },
+		options: { rotaryActions: true },
+		steps: [
+			{
+				down: [],
+				up: [],
+				rotate_left: [{ actionId: 'volume_adjust', options: { db: '-1' } }],
+				rotate_right: [{ actionId: 'volume_adjust', options: { db: '1' } }],
+			},
+		],
+		feedbacks: [],
+	}
 
 	// ── Status & Countdown (needs feedback enabled in TRUCUE) ────────
 	display('status_countdown', 'Status & Countdown', 'Countdown to OUT',
