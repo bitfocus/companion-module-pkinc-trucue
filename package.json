@@ -4,7 +4,8 @@
 	"main": "src/main.js",
 	"scripts": {
 		"test": "node test/smoke.js",
-		"package": "companion-module-build"
+		"package": "companion-module-build",
+		"release": "yarn test && yarn package && node tools/release.js"
 	},
 	"license": "MIT",
 	"repository": {

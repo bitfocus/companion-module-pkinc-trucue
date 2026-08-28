@@ -23,11 +23,20 @@ Drives TRUCUE's OSC remote-control API over UDP.
 
 See [companion/HELP.md](companion/HELP.md) for setup and usage.
 
+## Install without the store
+
+Download the ready-made package and import it in Companion's **Modules**
+tab ("Import module package"):
+
+- **Latest:** [releases/pkinc-trucue-latest.tgz](https://github.com/bitfocus/companion-module-pkinc-trucue/raw/main/releases/pkinc-trucue-latest.tgz)
+- Versioned builds live in [releases/](releases/).
+
 ## Development
 
 ```
 corepack yarn install
 corepack yarn test        # offline round-trip tests against TRUCUE's OSC grammar
+corepack yarn release     # test + build + refresh releases/*.tgz (run on every version bump)
 ```
 
 Load it as a Companion dev module: point the launcher's *Developer
