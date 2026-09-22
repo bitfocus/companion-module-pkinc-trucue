@@ -49,9 +49,10 @@ function parseStatusPayload(json) {
 		playing: num(o.playing, 0) ? 1 : 0,
 		next: typeof o.next === 'string' ? o.next : '',
 		prev: typeof o.prev === 'string' ? o.prev : '',
-		vol: o.vol === undefined ? null : num(o.vol, 0),
+		// `== null` covers both a missing key and an explicit JSON null.
+		vol: o.vol == null ? null : num(o.vol, 0),
 		bmName: typeof o.bmName === 'string' ? o.bmName : '',
-		bmRemaining: o.bmRemaining === undefined ? -1 : Math.max(0, num(o.bmRemaining, 0)),
+		bmRemaining: o.bmRemaining == null ? -1 : Math.max(0, num(o.bmRemaining, 0)),
 	}
 }
 

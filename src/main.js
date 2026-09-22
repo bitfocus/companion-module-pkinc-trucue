@@ -29,28 +29,38 @@ class TrucueInstance extends InstanceBase {
 			(level, msg) => this.log(level, msg),
 			(st) => {
 				this.lastStatusAt = Date.now()
+				const wasStale = this.stale
 				this.stale = false
 				this.applyStatus(st)
+				if (wasStale) this.refreshInstanceStatus() // warning → Ok
 			},
 			(names) => this.applyPlaylist(names),
 			(ok, msg) => {
 				this.listenOk = ok
 				this.listenErr = ok ? null : (msg ?? 'Feedback listener error')
+				if (ok) this.listenStartedAt = Date.now()
 				this.refreshInstanceStatus()
 			},
 		)
 
 		// Staleness watchdog: the app heartbeats status every second, so
-		// >3.5 s of silence means the feed is gone — blank the variables
-		// and release the feedbacks instead of freezing a live-looking
-		// (possibly red) countdown on the surface.
+		// >3.5 s of silence (after the last packet, or after the listener
+		// came up without ever hearing one) means the feed is dead — blank
+		// the variables, release the feedbacks, and say so in the
+		// connection status instead of showing a live-looking "Ok".
 		this.lastStatusAt = 0
+		this.listenStartedAt = 0
 		this.stale = false
 		this.staleTimer = setInterval(() => {
-			if (!this.stale && this.lastStatusAt > 0 && Date.now() - this.lastStatusAt > 3500) {
+			if (!this.listenEnabled || this.stale) return
+			const since = this.lastStatusAt > 0 ? this.lastStatusAt : this.listenStartedAt
+			if (since > 0 && Date.now() - since > 3500) {
 				this.stale = true
-				this.log('info', 'TRUCUE status feed stopped — clearing variables')
+				this.log('warn', this.lastStatusAt > 0
+					? 'TRUCUE status feed stopped — clearing variables'
+					: 'No status from TRUCUE — is Companion feedback enabled in Settings → OSC?')
 				this.applyStatus({ ...EMPTY_STATUS })
+				this.refreshInstanceStatus()
 			}
 		}, 1000)
 
@@ -83,6 +93,7 @@ class TrucueInstance extends InstanceBase {
 		this.sendOk = false
 		this.sendErr = null
 		this.lastStatusAt = 0
+		this.listenStartedAt = 0
 		this.stale = false
 
 		// Validate everything BEFORE acting, so a BadConfig verdict can't
@@ -123,6 +134,13 @@ class TrucueInstance extends InstanceBase {
 		} else if (this.listenEnabled && !this.listenOk) {
 			if (this.listenErr) this.updateStatus(InstanceStatus.ConnectionFailure, this.listenErr)
 			else this.updateStatus(InstanceStatus.Connecting)
+		} else if (this.listenEnabled && this.stale) {
+			this.updateStatus(
+				InstanceStatus.UnknownWarning,
+				this.lastStatusAt > 0
+					? 'TRUCUE status feed stopped'
+					: 'No status from TRUCUE — enable Companion feedback in Settings → OSC',
+			)
 		} else {
 			this.updateStatus(InstanceStatus.Ok)
 		}
@@ -199,7 +217,6 @@ class TrucueInstance extends InstanceBase {
 				width: 4,
 				regex: Regex.PORT,
 				default: '9017',
-				isVisible: (options) => options.listen !== false,
 				isVisibleExpression: '$(options:listen) !== false',
 			},
 		]

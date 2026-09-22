@@ -368,7 +368,7 @@ module.exports = function getActionDefinitions(self) {
 					label: 'Value',
 					default: '',
 					useVariables: true,
-					isVisible: (options) => options.argtype !== 'none',
+					isVisibleExpression: "$(options:argtype) !== 'none'",
 				},
 			],
 			callback: async (event, context) => {
