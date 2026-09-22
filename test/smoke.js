@@ -73,6 +73,16 @@ function mapCommand(msg, prefix) {
 	}
 }
 
+// Minimal evaluator for the isVisibleExpression shapes this module uses:
+//   $(options:X) === 'v' | !== 'v' | === true | !== false
+function evalVisible(expr, options) {
+	const m = /^\$\(options:([a-z0-9_]+)\)\s*(===|!==)\s*(?:'([^']*)'|(true|false))$/i.exec(expr.trim())
+	if (!m) throw new Error(`unsupported isVisibleExpression in test: ${expr}`)
+	const expected = m[3] !== undefined ? m[3] : m[4] === 'true'
+	const equal = options[m[1]] === expected
+	return m[2] === '===' ? equal : !equal
+}
+
 // ── Simulation of the app's mode + shuttle state machines ───────────────
 function applyModeCmd(state, m) {
 	if (m.cmd === '/loop') {
@@ -350,6 +360,16 @@ const main = async () => {
 		eq(empty.bmRemaining, -1, 'missing bookmark → -1')
 		eq(empty.vol, null, 'missing vol → null')
 		eq(empty.next, '', 'missing next → empty')
+		// Explicit JSON nulls must behave exactly like missing keys.
+		const nulls = parseStatusPayload(JSON.stringify({
+			clip: 'X', index: 1, remaining: 5, playing: 0, vol: null, bmName: null, bmRemaining: null, next: null, prev: null,
+		}))
+		eq(nulls.vol, null, 'explicit null vol → null (not 0)')
+		eq(nulls.bmRemaining, -1, 'explicit null bmRemaining → -1 (not 0)')
+		eq(nulls.bmName, '', 'explicit null bmName → empty')
+		eq(nulls.next, '', 'explicit null next → empty')
+		eq(variablesForStatus(nulls).clip_volume, '', 'null vol → blank clip_volume')
+		eq(variablesForStatus(nulls).bookmark_remaining, '', 'null bookmark → blank countdown')
 		eq(parseStatusPayload('not json'), null, 'garbage json → null')
 		eq(parseStatusPayload('[1,2]'), null, 'array payload → null')
 		eq(parsePlaylistPayload('["A","B"]'), ['A', 'B'], 'playlist payload parses')
@@ -396,26 +416,20 @@ const main = async () => {
 		eq(feedbacks.bookmark_under.callback({ options: { seconds: 9999 } }), false, 'no bookmark → bookmark feedback off')
 	}
 
-	// Upgrade scripts: pre-1.1 configs get the feedback defaults, and the
-	// old default ports migrate to the new ones.
+	// Upgrade scripts: first published version → nothing to migrate from.
 	{
 		const UpgradeScripts = require('../src/upgrades')
-		eq(UpgradeScripts.length, 2, 'two upgrade scripts')
-		const r = UpgradeScripts[0]({}, { config: { host: '1.2.3.4', port: '8000', prefix: 'trucue' }, actions: [], feedbacks: [] })
-		eq(r.updatedConfig.listen, true, 'upgrade defaults listen on')
-		eq(r.updatedConfig.feedbackPort, '9001', 'upgrade defaults feedback port (as shipped in 1.1.0)')
-		eq(r.updatedActions, [], 'upgrade touches no actions')
-		const r2 = UpgradeScripts[0]({}, { config: { listen: false }, actions: [], feedbacks: [] })
-		eq(r2.updatedConfig, null, 'explicit listen setting untouched')
-		const r3 = UpgradeScripts[0]({}, { config: null, actions: [], feedbacks: [] })
-		eq(r3.updatedConfig, null, 'null config tolerated')
+		eq(UpgradeScripts, [], 'first public release ships an empty upgrade list')
+	}
 
-		const p1 = UpgradeScripts[1]({}, { config: { port: '8000', feedbackPort: '9001' }, actions: [], feedbacks: [] })
-		eq(p1.updatedConfig, { port: '8017', feedbackPort: '9017' }, 'old default ports migrate')
-		const p2 = UpgradeScripts[1]({}, { config: { port: 8000, feedbackPort: '5555' }, actions: [], feedbacks: [] })
-		eq(p2.updatedConfig, { port: '8017', feedbackPort: '5555' }, 'numeric 8000 migrates, custom feedback port kept')
-		const p3 = UpgradeScripts[1]({}, { config: { port: '8001', feedbackPort: '9002' }, actions: [], feedbacks: [] })
-		eq(p3.updatedConfig, null, 'deliberate non-default ports untouched')
+	// Deprecated isVisible must not appear on any option (reviewer rule:
+	// isVisibleExpression only, never both).
+	for (const [kind, defs] of [['action', actions], ['feedback', feedbacks]]) {
+		for (const [id, def] of Object.entries(defs)) {
+			for (const o of def.options ?? []) {
+				ok(!('isVisible' in o), `${kind} "${id}" option "${o.id}" uses no deprecated isVisible`)
+			}
+		}
 	}
 
 	// ── 5. Presets reference real actions/feedbacks/variables ──────────
@@ -437,7 +451,7 @@ const main = async () => {
 				}
 				for (const o of optionDefs) {
 					if (o.type === 'static-text') continue
-					if (typeof o.isVisible === 'function' && !o.isVisible(ref.options)) continue
+					if (o.isVisibleExpression && !evalVisible(o.isVisibleExpression, ref.options)) continue
 					ok(
 						Object.prototype.hasOwnProperty.call(ref.options, o.id),
 						`preset "${key}" supplies option "${o.id}" of action "${ref.actionId}"`,

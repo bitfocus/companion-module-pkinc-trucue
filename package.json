@@ -1,6 +1,6 @@
 {
 	"name": "pkinc-trucue",
-	"version": "1.2.2",
+	"version": "1.2.3",
 	"main": "src/main.js",
 	"scripts": {
 		"test": "node test/smoke.js",
@@ -20,6 +20,6 @@
 		"@companion-module/base": "1.13.6"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.6.0"
+		"@companion-module/tools": "^2.8.0"
 	}
 }
